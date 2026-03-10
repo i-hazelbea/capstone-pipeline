@@ -1,0 +1,65 @@
+# Core Data Transformation (dbt)
+dbt-adapters==1.22.5                        # provides interface between dbt-core and specific database engines
+dbt-common==1.37.2                          # contains share utility code used across the dbt ecosystem
+dbt-core==1.11.2                            # the main framework for managing data transformations and the medallion architecture
+dbt-extractor==0.6.0                        # a high-performance library for parsing dbt project files
+dbt-protos==1.0.425                         # handles protocol buffer definitions for dbt internal communciation
+dbt-semantic-interfaces==0.9.0              # defines the structure of the dbt semantic layer
+Jinja2==3.1.6                               # templating engine used to write dynamic SQL in dbt
+MarkupSafe==3.0.3                           # a dependency for Jinja2 that escapes HTML characterse for security
+sqlparse==0.5.4                             # a non-validating SQL parser used to format and identify SQL statements
+
+# Database and Storage (DuckDB)
+dbt-duckdb==1.10.0                          # the specific adapter that allows dbt to run transformations on DuckDB
+duckdb==1.4.4                               # an in-process analytical database engine optimized for fast OLAP queries
+
+# Data Handling and Formatting
+agate==1.9.1                                # a data analysis library optimized for humans, used by dt for seed files
+babel==2.17.0                               # a collection of tools for internationalizing and localizing data
+daff==1.4.2                                 # a library fo comparing tables and identifying differences between datasets
+deepdiff==8.6.1                             # used for deep comparison of python objects and dictionaries
+isodate==0.7.2                              # provides methods to parse and format ISO 8601 dates and durations
+leather==0.4.1                              # a simplified charting library used for basic data visualization
+parsedatetime==2.6                          # a library for parsing 'human readable' date/time expressions
+python-dateutil==2.9.0.post0                # extends the standard python datetime module with useful features
+python-slugify==8.0.4                       # converts strings into 'slugs' for clean file or URL naming
+pytimeparse==1.1.8                          # a small library to parse time expression in seconds
+pytz==2025.2                                # brings the Olson timezone database into Python for accurate time conversions
+text-unidecode==1.3                         # provides the most basic ASCII transliteration of Unicode text
+tzdata==2025.3                              # provides the actual timezone database fiels for the environment
+
+# Schema and Validation
+annotated-types==0.7.0                      # supports additional metadata for PEP-593 types
+jsonschema==4.26.0                          # an implementation of JSON Schema for validating data structures
+jsonschema-specifications==2025.9.1         # contains the formal specifications used by the jsonschema library
+pydantic==2.12.5                            # a data visualization and settings management library using Python type annotations
+pydantic_core==2.41.5                       # the high-performance core engine for Pydantic
+referencing==0.37.0                         # a cross-specification implementation of JSON referencing
+rpds-py==0.30.0                             # provides persistent data structures used for efficient schema handling
+
+# Network and Communication
+certifi==2026.1.4                           # a curated collection of Root Certificates for validating SSL/TLS connections
+charset-normalizer==3.4.4                   # detects character encoding to prevent errors when reading data
+idna==3.11                                  # supports internationalized Domain Names in Applications
+msgpack==1.1.2                              # a fast, efficient binary serialization format
+protobuf==6.33.4                            # Google's language-neutral mechanism for serializing structured data
+requests==2.32.5                            # the standard library for making HTTP requests to APIs
+snowplow-tracker==1.1.0                     # used for event tracking and telemetry within the pipeline
+urllib3==2.6.3                              # a powerful, user-friendly HTTP client for Python
+
+# Utility and Environment
+attrs==25.4.0                               # a library that simplifies the creation of Python classes
+click==8.3.1                                # a package for creating beautiful command line interfaces
+colorama==0.4.6                             # makes ANSI escape character sequences work under Windows for colored terminal output
+importlib_metadata==8.7.1                   # allows the pipeline to query metadata from installed packages
+mashumaro==3.14                             # a fast serialization library that works well with Pydantic
+more-itertools==10.8.0                      # expands on the standard itertools for efficient data looping
+networkx==3.6.1                             # used for studying the structure and dynamics of complex networks (like dbt DAGs)
+orderly-set==5.5.0                          # a package providing a set that maintains the order of inserted items
+packaging==26.0                             # core utilities for handling Python package versions and specificions
+pathspec==0.12.1                            # utility for gitignore-style pattern matching for file paths
+PyYAML==6.0.3                               # a full-featured YAML framework for Python
+six==1.17.0                                 # a compatibilty library to help bridge the gat between Python 2 and 3
+typing-inspection==0.4.2                    # provides runtime inspection utilities for Python types
+typing_extensions==4.15.0                   # enables the use of newer type system features in older Python versions
+zipp==3.23.0                                # a backport of the standard zipfile module with modern features
