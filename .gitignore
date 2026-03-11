@@ -259,3 +259,4 @@ airflow/logs/
 # Other
 .info
 .databricks
+.vscode
