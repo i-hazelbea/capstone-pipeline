@@ -1,5 +1,6 @@
 # Data Processing and API Integration
 pandas==2.1.4               # provides the DataFrame structure to clean and transform movie data before loading
+numpy==1.26.                # fundamental package for scientific computing
 requests==2.31.0            # the standard library for sending HTTP requests to fetch raw data from external APIs
 
 # Database Connectivity
@@ -9,3 +10,11 @@ sqlalchemy==2.0.23          # a SQL toolkit and Object Relation Manager (ORM) th
 # Configuration and Formatting
 python-dotenv==1.0.0        # reads key-value pairs from your .env file and sets them as environment variables
 rich                        # library for rich teset and beautiful formatting in the terminal
+
+# Testing for Development
+pytest==7.4.3               # a framework that makes it easy to write simple and scalable test cases for you ingestion logic
+pytest-cov==4.1.0           # a plugin for pytest that produces coverage reports to show which parts of your code is tested
+
+# Code Quality
+black==23.12.1              # the uncompromising python code formatter that ensures a consistent coding style accross your project
+pylint==3.0.3               # a static code analyzer which looks for programming erros and helps enforce a coding standard
