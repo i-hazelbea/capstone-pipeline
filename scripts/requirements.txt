@@ -1,0 +1,11 @@
+# Data Processing and API Integration
+pandas==2.1.4               # provides the DataFrame structure to clean and transform movie data before loading
+requests==2.31.0            # the standard library for sending HTTP requests to fetch raw data from external APIs
+
+# Database Connectivity
+psycopg2-binary==2.9.9      # the PostgreSQL adapter that allows Python to execute SQL commands
+sqlalchemy==2.0.23          # a SQL toolkit and Object Relation Manager (ORM) that simplifies database interactions
+
+# Configuration and Formatting
+python-dotenv==1.0.0        # reads key-value pairs from your .env file and sets them as environment variables
+rich                        # library for rich teset and beautiful formatting in the terminal
