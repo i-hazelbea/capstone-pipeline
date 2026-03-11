@@ -1,0 +1,180 @@
+services:
+    postgres:
+        image: postgres:15-alpine
+        container_name: mm-postgres
+        env_file:
+            - .env
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+            POSTGRES_DB: ${POSTGRES_DB}
+        volumes:
+            - mm_db_data:/var/lib/postgresql/data
+            - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+        ports:
+            - ${POSTGRES_PORT:-5430}:5432
+        healthcheck:
+            test:
+                ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d {POSTGRES_DB}"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+        networks:
+            - mm-network
+        restart: unless-stopped
+
+    airflow-webserver:
+        build:
+            context: ./airflow
+            dockerfile: dockerfile
+        container_name: mm-airflow-webserver
+        depends_on:
+            postgres:
+                condition: service_healthy
+        env_file:
+            - .env
+        environment:
+            - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+            - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+            - AIRFLOW__LOGGING__REMOTE_LOGGING=False
+            - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+            - AIRFLOW__CORE__LOAD_EXAMPLES=${AIRFLOW_LOAD_EXAMPLES:-False}
+            - AIRFLOW__WEBSERVER__SECRET_KEY={AIRFLOW_SECRET_KEY}
+            - POSTGRES_USER=${POSTGRES_USER}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            - POSTGRES_DB=${POSTGRES_DB}
+            - DB_HOST=postgres
+            - DB_PORT=5432
+        volumes:
+            - ./airflow/dags:/opt/airflow/dags
+            - ./airflow/datasets:/opt/airflow/datasets
+            - ./airflow/logs:/opt/airflow/logs
+            - ./dbt:/opt/airflow/dbt
+            - ./scripts:/opt/airflow/scripts
+            - /var/run/docker.sock:/var/run/docker.sock
+        ports:
+            - "${AIRFLOW_WEBSERVER_PORT:-8082}:8080"
+        healthcheck:
+            test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
+        networks:
+            - mm-network
+        restart: unless-stopped
+        command:
+            - bash
+            - -c
+            - |
+                set -e
+                airflow db migrate
+                echo 'Database migrated successfully'
+                airflow users create \
+                  -u "$AIRFLOW_ADMIN_USER" \
+                  -p "$AIRFLOW_ADMIN_PASSWORD" \
+                  -f hazel \
+                  -l bea \
+                  -r Admin \
+                  -e "$AIRFLOW_ADMIN_EMAIL"
+                echo 'User created successfully'
+                airflow webserver
+
+    airflow-scheduler:
+        build:
+            context: ./airflow
+            dockerfile: Dockerfile
+        container_name: mm-airflow-scheduler
+        depends_on:
+            airflow-webserver:
+                condition: service_healthy
+        env_file:
+            - .env
+        environment:
+            - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+            - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB} # Also needs access to run DAGs
+            - AIRFLOW__LOGGING__REMOTE_LOGGING=False
+            - POSTGRES_USER=${POSTGRES_USER}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            - POSTGRES_DB=${POSTGRES_DB}
+            - DB_HOST=postgres
+            - DB_PORT=5432
+        volumes:
+            - ./airflow/dags:/opt/airflow/dags
+            - ./airflow/datasets:/opt/airflow/datasets
+            - ./airflow/logs:/opt/airflow/logs
+            - ./dbt:/opt/airflow/dbt
+            - ./scripts:/opt/airflow/scripts
+            - /var/run/docker.sock:/var/run/docker.sock
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "airflow jobs check --job-type SchedulerJob --hostname $(hostname)",
+                ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
+        networks:
+            - mm-network
+        restart: unless-stopped
+        command: scheduler
+
+    python-app:
+        build:
+            context: ./scripts
+            dockerfile: Dockerfile
+        container_name: mm-python-scripts
+        depends_on:
+            postgres:
+                condition: service_healthy
+        env_file:
+            - .env
+        environment:
+            - DB_HOST=postgres
+            - DB_PORT=5432
+            - DB_USER=${POSTGRES_USER}
+            - DB_PASSWORD=${POSTGRES_PASSWORD}
+            - DB_NAME=${POSTGRES_DB}
+        volumes:
+            - ./scripts:/scripts
+            - ./airflow/datasets:/app/datasets
+        networks:
+            - mm-network
+        restart: on-failure
+        command: tail -f /dev/null
+
+    dbt:
+        image: ghcr.io/dbt-labs/dbt-postgres:1.8.latest
+        container_name: mm-dbt
+        working_dir: /usr/app
+        env_file:
+            - .env
+        environment:
+            - DBT_PROFILES_DIR=/usr/app
+            - DB_HOST=postgres
+            - DB_PORT=5432
+            - DB_USER=${POSTGRES_USER}
+            - DB_PASSWORD=${POSTGRES_PASSWORD}
+            - DB_NAME=${POSTGRES_DB}
+        volumes:
+            - ./dbt:/usr/app
+            - ./airflow/datasets:/usr/app/datasets
+        depends_on:
+            postgres:
+                condition: service_healthy
+        networks:
+            - mm-network
+        entrypoint: /bin/sh
+        command: -c "tail -f /dev/null"
+
+networks:
+    mm-network:
+        driver: bridge
+        name: mm-pipeline-network
+
+volumes:
+    postgres_data:
+        name: bea-postgres-data
