@@ -1,0 +1,5 @@
+# Airflow providers
+apache-airflow-providers-postgres==5.7.1
+
+# Utilities
+python-dotenv==1.0.0
