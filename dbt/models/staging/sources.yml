@@ -1,0 +1,43 @@
+version: 2
+
+sources:
+    - name: mm-raw
+      schema: raw
+      description: "Raw data ingested from the movie dataset files"
+
+      tables:
+          - name: movies_main
+            description: "Main movie information including titles, release dates, and financial data"
+            columns:
+                - name: id
+                  description: "Unique identifier for the movie"
+                - name: title
+                  description: "Movie title"
+                - name: release_date
+                  description: "Moview release date"
+                - name: budget
+                  description: "Production budget in USD"
+                - name: revenue
+                  description: "Total box office revenue in USD"
+
+          - name: movie_extended
+            description: "Extended movie metadata including genres, production details, and languages"
+            columns:
+                - name: id
+                  description: "Unique identifier for the movie, foreign key to movie_main"
+                - name: genres
+                  description: "Comma-separated list of movie genres"
+                - name: production_companies
+                  description: "Production company names"
+                - name: spoken_languages
+                  description: "JSON array of spoken langauges with ISO codes"
+
+          - name: ratings
+            description: "Movie ratings aggregated data, processed by PySpark, documented here for reference"
+            columns:
+                - name: movie_id
+                  description: "Unique identifier for the movie"
+                - name: ratings_summary
+                  description: "Nested JSON object containing avg_rating, total_ratings, and std_dev"
+                - name: last_rated
+                  description: "Unix timestamp of the most recent rating"
