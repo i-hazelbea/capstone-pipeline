@@ -10,7 +10,7 @@ services:
             POSTGRES_DB: ${POSTGRES_DB}
         volumes:
             - mm_db_data:/var/lib/postgresql/data
-            - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+            - ./postgres/init:/docker-entrypoint-initdb.d
         ports:
             - ${POSTGRES_PORT:-5430}:5432
         healthcheck:
@@ -27,7 +27,7 @@ services:
     airflow-webserver:
         build:
             context: ./airflow
-            dockerfile: dockerfile
+            dockerfile: Dockerfile
         container_name: mm-airflow-webserver
         depends_on:
             postgres:
@@ -135,8 +135,8 @@ services:
         environment:
             - DB_HOST=postgres
             - DB_PORT=5432
-            - DB_USER=${POSTGRES_USER}
-            - DB_PASSWORD=${POSTGRES_PASSWORD}
+            - DB_USER=${ETL_DB_USER}
+            - DB_PASSWORD=${ETL_DB_PASSWORD}
             - DB_NAME=${POSTGRES_DB}
         volumes:
             - ./scripts:/scripts
@@ -156,8 +156,8 @@ services:
             - DBT_PROFILES_DIR=/usr/app
             - DB_HOST=postgres
             - DB_PORT=5432
-            - DB_USER=${POSTGRES_USER}
-            - DB_PASSWORD=${POSTGRES_PASSWORD}
+            - DB_USER=${DBT_DB_USER}
+            - DB_PASSWORD=${DBT_DB_PASSWORD}
             - DB_NAME=${POSTGRES_DB}
         volumes:
             - ./dbt:/usr/app
@@ -176,5 +176,5 @@ networks:
         name: mm-pipeline-network
 
 volumes:
-    postgres_data:
-        name: bea-postgres-data
+    mm_db_data:
+        name: mm-postgres-data
