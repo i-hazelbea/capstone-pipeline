@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS raw.movies_main (
 CREATE TABLE IF NOT EXISTS raw.movie_extended (
     id TEXT,
     genres TEXT,
+    production_countries TEXT,
     production_companies TEXT,
     spoken_languages TEXT,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -41,13 +42,3 @@ ON raw.movie_extended(id);
 
 CREATE INDEX IF NOT EXISTS idx_ratings_movie_id
 ON raw.ratings(movie_id);
-
--- ==========================================
--- PERMISSIONS (AFTER TABLE CREATION)
--- ==========================================
-
--- etl user can load raw data
-GRANT SELECT, INSERT, TRUNCATE ON ALL TABLES IN SCHEMA raw TO etl;
-
--- dbt user can read raw data
-GRANT SELECT ON ALL TABLES IN SCHEMA raw TO dbt;
