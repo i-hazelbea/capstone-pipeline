@@ -6,6 +6,12 @@ target/
 dbt_modules/
 dbt_packages/
 logs/
+dbt/logs/
+dbt/target/
+.user.yml
+*.dbt_artifacts.json
+dbt_results.json
+artifacts/
 
 ### Linux ###
 *~
