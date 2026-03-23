@@ -1,0 +1,74 @@
+version: 2
+
+models:
+    - name: stg_movies_main
+      description: Cleaned and deduplicated movie master data from staging.movies_main source.
+      columns:
+          - name: movie_id
+            description: Unique movie identifier.
+            data_type: text
+            tests:
+                - not_null
+                - unique
+          - name: title
+            description: Movie title when present in raw source or Kaggle fallback data.
+            data_type: text
+          - name: release_date
+            description: Parsed movie release date.
+            data_type: date
+          - name: budget_amount
+            description: Parsed numeric movie budget amount.
+            data_type: numeric(18,2)
+          - name: revenue_amount
+            description: Parsed numeric movie revenue amount.
+            data_type: numeric(18,2)
+          - name: loaded_at
+            description: Latest staging load timestamp used for record recency.
+            data_type: timestamp
+
+    - name: stg_movie_extended
+      description: Cleaned and deduplicated movie extended attributes from staging.movie_extended source.
+      columns:
+          - name: movie_id
+            description: Unique movie identifier.
+            data_type: text
+            tests:
+                - not_null
+                - unique
+          - name: genres
+            description: Comma-separated genre list.
+            data_type: text
+          - name: production_countries
+            description: Comma-separated production country list.
+            data_type: text
+          - name: production_companies
+            description: Comma-separated production company list.
+            data_type: text
+          - name: spoken_languages
+            description: Comma-separated spoken language list.
+            data_type: text
+          - name: loaded_at
+            description: Latest staging load timestamp used for record recency.
+            data_type: timestamp
+
+    - name: stg_ratings
+      description: Cleaned and deduplicated ratings from staging.ratings source.
+      columns:
+          - name: movie_id
+            description: Unique movie identifier.
+            data_type: text
+            tests:
+                - not_null
+                - unique
+          - name: avg_rating
+            description: Numeric average rating metric.
+            data_type: numeric(10,4)
+          - name: total_ratings
+            description: Numeric rating vote volume.
+            data_type: integer
+          - name: std_dev
+            description: Numeric rating standard deviation when available.
+            data_type: numeric(10,4)
+          - name: loaded_at
+            description: Parsed timestamp of the latest staged ratings record.
+            data_type: timestamp

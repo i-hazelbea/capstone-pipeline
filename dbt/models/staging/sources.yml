@@ -1,43 +1,50 @@
 version: 2
 
 sources:
-    - name: mm-raw
-      schema: raw
-      description: "Raw data ingested from the movie dataset files"
-
-      tables:
-          - name: movies_main
-            description: "Main movie information including titles, release dates, and financial data"
-            columns:
-                - name: id
-                  description: "Unique identifier for the movie"
-                - name: title
-                  description: "Movie title"
-                - name: release_date
-                  description: "Moview release date"
-                - name: budget
-                  description: "Production budget in USD"
-                - name: revenue
-                  description: "Total box office revenue in USD"
-
-          - name: movie_extended
-            description: "Extended movie metadata including genres, production details, and languages"
-            columns:
-                - name: id
-                  description: "Unique identifier for the movie, foreign key to movie_main"
-                - name: genres
-                  description: "Comma-separated list of movie genres"
-                - name: production_companies
-                  description: "Production company names"
-                - name: spoken_languages
-                  description: "JSON array of spoken langauges with ISO codes"
-
-          - name: ratings
-            description: "Movie ratings aggregated data, processed by PySpark, documented here for reference"
-            columns:
-                - name: movie_id
-                  description: "Unique identifier for the movie"
-                - name: ratings_summary
-                  description: "Nested JSON object containing avg_rating, total_ratings, and std_dev"
-                - name: last_rated
-                  description: "Unix timestamp of the most recent rating"
+  - name: mm_staging
+    schema: staging
+    description: Staging tables produced by scripts/stage_data.py after enrichment from raw ingestion plus Kaggle TMDB fallback values.
+    tables:
+      - name: movies_main
+        description: Movie attributes enriched with Kaggle fallback values for title, release_date, budget, and revenue.
+        columns:
+          - name: id
+            description: Movie identifier (TMDB id)
+          - name: title
+            description: Movie title after enrichment fallback
+          - name: release_date
+            description: Normalized release date text from Python staging process
+          - name: budget
+            description: Budget text value (cleaned in dbt staging model)
+          - name: revenue
+            description: Revenue text value (cleaned in dbt staging model)
+          - name: loaded_at
+            description: Ingestion timestamp written by stage_data.py for recency-based deduplication
+      - name: movie_extended
+        description: Extended movie attributes enriched with Kaggle fallback values.
+        columns:
+          - name: id
+            description: Movie identifier (TMDB id)
+          - name: genres
+            description: Genres text list
+          - name: production_countries
+            description: Production countries text list
+          - name: production_companies
+            description: Production companies text list
+          - name: spoken_languages
+            description: Spoken languages text list
+          - name: loaded_at
+            description: Ingestion timestamp written by stage_data.py for recency-based deduplication
+      - name: ratings
+        description: Ratings table combining raw ratings with Kaggle vote_average and vote_count fallback.
+        columns:
+          - name: movie_id
+            description: Movie identifier (TMDB id)
+          - name: avg_rating
+            description: Rating signal text (raw avg_rating, fallback Kaggle vote_average)
+          - name: total_ratings
+            description: Rating volume text (raw total_ratings, fallback Kaggle vote_count)
+          - name: stg_dev
+            description: Standard deviation of ratings text from raw source when available
+          - name: loaded_at
+            description: Timestamp text from Python staging process
