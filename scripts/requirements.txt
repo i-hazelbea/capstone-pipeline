@@ -1,7 +1,8 @@
 # Data Processing and API Integration
 pandas==2.1.4               # provides the DataFrame structure to clean and transform movie data before loading
-numpy==1.26.                # fundamental package for scientific computing
+numpy==1.26.4               # fundamental package for scientific computing
 requests==2.31.0            # the standard library for sending HTTP requests to fetch raw data from external APIs
+kagglehub==1.0.0            # downloads Kaggle datasets for enrichment in stage_data.py
 
 # Database Connectivity
 psycopg2-binary==2.9.9      # the PostgreSQL adapter that allows Python to execute SQL commands
