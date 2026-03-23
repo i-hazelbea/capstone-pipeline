@@ -26,8 +26,9 @@ POSTGRES_INIT_DIR := /docker-entrypoint-initdb.d
 	bootstrap reset-db reinit-grants \
 	db-shell-admin db-shell-etl db-shell-dbt db-shell-airflow \
 	verify-roles verify-raw-grants verify-schemas \
-	ingest ingest-check \
+	ingest stage ingest-check \
 	dbt-deps dbt-run dbt-test dbt-debug \
+	pipeline-run \
 	airflow-dags airflow-trigger \
 	status
 
@@ -59,11 +60,13 @@ help:
 	@echo ""
 	@echo "Data + Transform"
 	@echo "  make ingest            Run ingestion script in python container"
+	@echo "  make stage             Run staging enrichment script in python container"
 	@echo "  make ingest-check      Verify row counts in raw tables"
 	@echo "  make dbt-deps          Install dbt packages"
 	@echo "  make dbt-run           Run dbt models"
 	@echo "  make dbt-test          Run dbt tests"
 	@echo "  make dbt-debug         Validate dbt connection"
+	@echo "  make pipeline-run      Run ingest + stage + dbt run + dbt test"
 	@echo ""
 	@echo "Airflow"
 	@echo "  make airflow-dags      List DAGs"
@@ -157,6 +160,14 @@ ingest:
 	fi
 	docker exec -it $(PYTHON_CONTAINER) python /scripts/ingest_data.py
 
+stage:
+	@if [ ! -f scripts/stage_data.py ]; then \
+	echo "scripts/stage_data.py not found"; \
+	echo "Create staging script first, then run: make stage"; \
+	exit 1; \
+	fi
+	docker exec -it $(PYTHON_CONTAINER) python /scripts/stage_data.py
+
 ingest-check:
 	docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT 'movies_main' AS table_name, COUNT(*) AS row_count FROM raw.movies_main UNION ALL SELECT 'movie_extended', COUNT(*) FROM raw.movie_extended UNION ALL SELECT 'ratings', COUNT(*) FROM raw.ratings;"
 
@@ -171,6 +182,9 @@ dbt-test:
 
 dbt-debug:
 	docker exec -it $(DBT_CONTAINER) dbt debug
+
+pipeline-run: ingest stage dbt-run dbt-test
+	@echo "Full pipeline run complete"
 
 airflow-dags:
 	docker exec -it $(AIRFLOW_WEBSERVER_CONTAINER) airflow dags list
