@@ -1,4 +1,4 @@
-movie-mart-pipeline:
+movie_mart_pipeline:
     target: dev
     outputs:
         dev:
@@ -8,7 +8,7 @@ movie-mart-pipeline:
             user: "{{ env_var('DB_USER') }}"
             password: "{{ env_var('DB_PASSWORD') }}"
             dbname: "{{ env_var('DB_NAME') }}"
-            schema: movie-mart
+            schema: staging
             threads: 4
             keepalives_idle: 0
             connect_timeout: 10

@@ -1,11 +1,11 @@
-name: "movie-mart-pipeline"
+name: "movie_mart_pipeline"
 version: "1.0.0"
 config-version: 2
 
 # Configures which 'profile' dbt uses for this project
 profile: "movie_mart_pipeline"
 
-packages-install-path: "dbt_packages_internal"
+packages-install-path: "dbt_packages_internal_v2"
 
 # Where dbt should look for files
 model-paths: ["models"]
@@ -18,7 +18,7 @@ snapshot-paths: ["snapshots"]
 target-path: "target"
 clean-targets:
     - "target"
-    - "dbt_packages_internal"
+    - "dbt_packages_internal_v2"
 
 # Model config
 models:
@@ -36,6 +36,11 @@ models:
         # Marts -- business logic and aggregations
         marts:
             +materialized: table
+            +schema: marts
+
+        # Analytics -- consumption layer views
+        analytics:
+            +materialized: view
             +schema: analytics
 
 seeds:
