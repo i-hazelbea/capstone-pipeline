@@ -23,7 +23,7 @@ def start_pipeline_run(
             run_status,
             started_at
         )
-        VALUES (%s, %s, 'started', CURRENT_TIMESTAMP)
+        VALUES (%s, %s, 'started', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')
         RETURNING run_id;
     """
     try:
@@ -52,8 +52,10 @@ def complete_pipeline_run(
         SET
             run_status = %s,
             error_message = %s,
-            finished_at = CURRENT_TIMESTAMP,
-            duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))::INT
+            finished_at = CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila',
+            duration_seconds = EXTRACT(
+                EPOCH FROM ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila') - started_at)
+            )::INT
         WHERE run_id = %s;
     """
     try:
@@ -70,6 +72,7 @@ def start_task_log(
     stage_name: str,
     task_name: str,
     source_file: str | None = None,
+    source_relation: str | None = None,
     target_relation: str | None = None,
 ) -> int | None:
     if run_id is None:
@@ -81,17 +84,27 @@ def start_task_log(
             stage_name,
             task_name,
             source_file,
+            source_relation,
             target_relation,
             status,
             started_at
         )
-        VALUES (%s, %s, %s, %s, %s, 'started', CURRENT_TIMESTAMP)
+        VALUES (
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            'started',
+            CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'
+        )
         RETURNING task_id;
     """
     try:
         result = db.execute_query(
             query,
-            (run_id, stage_name, task_name, source_file, target_relation),
+            (run_id, stage_name, task_name, source_file, source_relation, target_relation),
             fetch=True,
         )
         if result:
@@ -123,8 +136,10 @@ def complete_task_log(
                 rows_in = %s,
                 rows_out = %s,
                 error_message = %s,
-                finished_at = CURRENT_TIMESTAMP,
-                duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))::INT
+                finished_at = CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila',
+                duration_seconds = EXTRACT(
+                    EPOCH FROM ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila') - started_at)
+                )::INT
             WHERE task_id = %s;
         """
         params = (status, rows_in, rows_out, error_message, task_id)
@@ -137,8 +152,10 @@ def complete_task_log(
                 rows_out = %s,
                 rows_rejected = %s,
                 error_message = %s,
-                finished_at = CURRENT_TIMESTAMP,
-                duration_seconds = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - started_at))::INT
+                finished_at = CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila',
+                duration_seconds = EXTRACT(
+                    EPOCH FROM ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila') - started_at)
+                )::INT
             WHERE task_id = %s;
         """
         params = (status, rows_in, rows_out,
