@@ -8,6 +8,8 @@ services:
             POSTGRES_USER: ${POSTGRES_USER}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
             POSTGRES_DB: ${POSTGRES_DB}
+            TZ: Asia/Manila
+            PGTZ: Asia/Manila
         volumes:
             - mm_db_data:/var/lib/postgresql/data
             - ./postgres/init:/docker-entrypoint-initdb.d
@@ -36,11 +38,14 @@ services:
             - .env
         environment:
             - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+            - AIRFLOW__CORE__DEFAULT_TIMEZONE=Asia/Manila
             - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
             - AIRFLOW__LOGGING__REMOTE_LOGGING=False
             - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=True
+            - AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE=Asia/Manila
             - AIRFLOW__CORE__LOAD_EXAMPLES=${AIRFLOW_LOAD_EXAMPLES:-False}
             - AIRFLOW__WEBSERVER__SECRET_KEY={AIRFLOW_SECRET_KEY}
+            - TZ=Asia/Manila
             - POSTGRES_USER=${POSTGRES_USER}
             - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
             - POSTGRES_DB=${POSTGRES_DB}
@@ -93,8 +98,11 @@ services:
             - .env
         environment:
             - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+            - AIRFLOW__CORE__DEFAULT_TIMEZONE=Asia/Manila
             - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB} # Also needs access to run DAGs
             - AIRFLOW__LOGGING__REMOTE_LOGGING=False
+            - AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE=Asia/Manila
+            - TZ=Asia/Manila
             - POSTGRES_USER=${POSTGRES_USER}
             - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
             - POSTGRES_DB=${POSTGRES_DB}
@@ -133,6 +141,7 @@ services:
         env_file:
             - .env
         environment:
+            - TZ=Asia/Manila
             - DB_HOST=postgres
             - DB_PORT=5432
             - DB_USER=${ETL_DB_USER}
@@ -154,6 +163,7 @@ services:
             - .env
         environment:
             - DBT_PROFILES_DIR=/usr/app
+            - TZ=Asia/Manila
             - DB_HOST=postgres
             - DB_PORT=5432
             - DB_USER=${DBT_DB_USER}
