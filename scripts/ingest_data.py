@@ -47,8 +47,12 @@ class MovieDataIngestion:
             return [payload]
         raise ValueError(f"Unsupported JSON structure in {json_path}")
 
-    def load_csv_to_postgres(self, csv_path: Path, table_name: str, schema: str = "raw") -> int:
-        """Load one CSV file as-is into a Postgres table (no transformations)."""
+    def load_csv_to_postgres(self, csv_path: Path, table_name: str, schema: str = "raw") -> tuple[int, int]:
+        """Load one CSV file as-is into a Postgres table (no transformations).
+
+        Returns:
+            tuple: (rows_written, rows_rejected)
+        """
         if not csv_path.exists():  # check if file exists
             raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
@@ -56,10 +60,13 @@ class MovieDataIngestion:
                     csv_path.name, schema, table_name)
 
         frame = pd.read_csv(csv_path, dtype=str)  # read csv file
+        rows_rejected = 0  # raw ingestion is strictly as-is
 
         # convert to dataframe for bulk insert
         columns, rows = prepare_rows(frame)
-        return self.db.bulk_insert(table_name, columns, rows, schema=schema)
+        rows_written = self.db.bulk_insert(
+            table_name, columns, rows, schema=schema)
+        return rows_written, rows_rejected
 
     @staticmethod
     def _flatten_ratings(records: Iterable[dict[str, Any]]) -> tuple[list[str], list[tuple[Any, ...]]]:
@@ -84,8 +91,12 @@ class MovieDataIngestion:
 
         return columns, flattened
 
-    def load_json_to_postgres(self, json_path: Path, table_name: str, schema: str = "raw") -> int:
-        """Load one JSON file into a Postgres table."""
+    def load_json_to_postgres(self, json_path: Path, table_name: str, schema: str = "raw") -> tuple[int, int]:
+        """Load one JSON file into a Postgres table.
+
+        Returns:
+            tuple: (rows_written, rows_rejected)
+        """
         if not json_path.exists():
             raise FileNotFoundError(f"JSON file not found: {json_path}")
 
@@ -95,7 +106,7 @@ class MovieDataIngestion:
         records = self._read_json_records(json_path)
         if not records:
             logger.warning("No records found in %s", json_path.name)
-            return 0
+            return 0, 0
 
         if table_name == "ratings":
             columns, rows = self._flatten_ratings(records)
@@ -104,19 +115,23 @@ class MovieDataIngestion:
             rows = [tuple(record.get(column) for column in columns)  # create a row (tuple) using the record.get(column) where column is the key and record is a dictionary with key-value pairs
                     for record in records]
 
-        return self.db.bulk_insert(table_name, columns, rows, schema=schema)
+        rows_before = len(rows)
+        rows_written = self.db.bulk_insert(
+            table_name, columns, rows, schema=schema)
+        rows_rejected = 0  # JSON files don't have duplicates in raw ingestion
+        return rows_written, rows_rejected
 
-    def ingest_movies_main(self, truncate: bool = True) -> int:
+    def ingest_movies_main(self, truncate: bool = True) -> tuple[int, int]:
         if truncate:
             self.db.truncate_table("movies_main", schema="raw")
         return self.load_csv_to_postgres(self.data_dir / "movies_main.csv", "movies_main", schema="raw")
 
-    def ingest_movie_extended(self, truncate: bool = True) -> int:
+    def ingest_movie_extended(self, truncate: bool = True) -> tuple[int, int]:
         if truncate:
             self.db.truncate_table("movie_extended", schema="raw")
         return self.load_csv_to_postgres(self.data_dir / "movie_extended.csv", "movie_extended", schema="raw")
 
-    def ingest_ratings(self, truncate: bool = True) -> int:
+    def ingest_ratings(self, truncate: bool = True) -> tuple[int, int]:
         if truncate:
             self.db.truncate_table("ratings", schema="raw")
         return self.load_json_to_postgres(self.data_dir / "ratings.json", "ratings", schema="raw")
@@ -169,16 +184,16 @@ class MovieDataIngestion:
                     target_relation=target_relation,
                 )
                 try:
-                    inserted = load_func(truncate=truncate)
-                    results[table_name] = inserted  # count result
+                    rows_written, rows_rejected = load_func(truncate=truncate)
+                    results[table_name] = rows_written  # count result
                     complete_task_log(  # marks task completed
                         self.db,
                         logger,
                         task_id,
                         status="completed",
-                        rows_in=inserted,
-                        rows_out=inserted,
-                        rows_rejected=0,
+                        rows_in=rows_written + rows_rejected,  # total rows before rejection
+                        rows_out=rows_written,
+                        rows_rejected=rows_rejected,
                     )
                 except Exception as exc:
                     complete_task_log(  # if failed
@@ -186,7 +201,6 @@ class MovieDataIngestion:
                         logger,
                         task_id,
                         status="failed",
-                        rows_rejected=0,
                         error_message=str(exc),
                     )
                     raise

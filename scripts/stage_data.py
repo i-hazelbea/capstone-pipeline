@@ -174,6 +174,183 @@ class MovieDataStaging:
         return self.db.bulk_insert(table_name, columns, rows, schema="staging")
 
     @staticmethod
+    def _text_is_blank(series: pd.Series) -> pd.Series:
+        """Treat null/empty/placeholder text values as blank."""
+        normalized = series.fillna("").astype(str).str.strip().str.lower()
+        return normalized.isin(["", "none", "null", "nan"])
+
+    def _collapse_duplicate_groups(
+        self,
+        frame: pd.DataFrame,
+        key_col: str,
+        signal_cols: list[str],
+    ) -> tuple[pd.DataFrame, dict[str, int]]:
+        """Collapse duplicate keys while recovering useful non-blank values onto kept rows."""
+        if frame.empty or key_col not in frame.columns:
+            return frame, {
+                "rows_rejected_dedup": 0,
+                "keys_recovered_from_duplicates": 0,
+                "cells_recovered_from_duplicates": 0,
+            }
+
+        # check for duplictes to fail fast
+        dup_mask = frame.duplicated(subset=[key_col], keep=False)
+        if not dup_mask.any():
+            return frame, {
+                "rows_rejected_dedup": 0,
+                "keys_recovered_from_duplicates": 0,
+                "cells_recovered_from_duplicates": 0,
+            }
+
+        work = frame.copy()
+        existing_signal_cols = [
+            col for col in signal_cols if col in work.columns]
+        kept_idx = work.groupby(key_col, sort=False).tail(
+            1).index  # save index labels
+
+        recovered_cells = 0
+        recovered_keys: set[str] = set()
+
+        for col in existing_signal_cols:
+            non_blank_values = work[col].where(~self._text_is_blank(work[col]))
+            last_non_blank = non_blank_values.groupby(work[key_col]).transform(
+                lambda s: s.dropna(
+                ).iloc[-1] if not s.dropna().empty else pd.NA
+            )
+
+            fill_mask = (
+                work.index.isin(kept_idx)
+                & self._text_is_blank(work[col])
+                & last_non_blank.notna()
+            )
+            if fill_mask.any():
+                work.loc[fill_mask, col] = last_non_blank[fill_mask]
+                recovered_cells += int(fill_mask.sum())
+                recovered_keys.update(
+                    work.loc[fill_mask, key_col].astype(str).tolist())
+
+        collapsed = work.drop_duplicates(subset=[key_col], keep="last")
+
+        return collapsed, {
+            "rows_rejected_dedup": int(len(frame) - len(collapsed)),
+            "keys_recovered_from_duplicates": int(len(recovered_keys)),
+            "cells_recovered_from_duplicates": int(recovered_cells),
+        }
+
+    def _dedup_diagnostics(
+        self,
+        frame: pd.DataFrame,
+        key_col: str,
+        signal_cols: list[str],
+        table_label: str,
+    ) -> dict[str, int]:
+        """Profile duplicate-key quality and potential information loss before dedup."""
+        if frame.empty or key_col not in frame.columns:
+            return {
+                "duplicate_groups": 0,
+                "duplicate_rows": 0,
+                "exact_duplicate_groups": 0,
+                "conflicting_duplicate_groups": 0,
+                "keys_with_potential_value_loss": 0,
+                "potential_value_loss_cells": 0,
+            }
+
+        dup = frame[frame.duplicated(subset=[key_col], keep=False)].copy()
+        if dup.empty:
+            return {
+                "duplicate_groups": 0,
+                "duplicate_rows": 0,
+                "exact_duplicate_groups": 0,
+                "conflicting_duplicate_groups": 0,
+                "keys_with_potential_value_loss": 0,
+                "potential_value_loss_cells": 0,
+            }
+
+        existing_signal_cols = [
+            col for col in signal_cols if col in dup.columns]
+        duplicate_groups = int(dup[key_col].nunique())
+        duplicate_rows = int(len(dup))
+
+        # creates a unique string 'signature' for each row
+        if existing_signal_cols:
+            normalized = dup[existing_signal_cols].fillna(
+                "").astype(str).apply(lambda s: s.str.strip())
+            signature = normalized.agg("||".join, axis=1)
+            # 1 = no conflict, 2 = conflict
+            sig_counts = signature.groupby(dup[key_col]).nunique()
+            conflicting_groups = int((sig_counts > 1).sum())
+        else:
+            conflicting_groups = 0
+
+        exact_groups = duplicate_groups - conflicting_groups  # exact duplicates
+
+        # Simulate keep='last' and identify where dropped rows contain non-blank values
+        # while the kept row is blank for the same field.
+        kept = dup.groupby(key_col, sort=False).tail(1)
+        dropped = dup.drop(index=kept.index)
+
+        keys_with_loss = 0
+        loss_cells = 0
+
+        if existing_signal_cols and not dropped.empty:
+            kept_by_key = kept[[key_col] +
+                               existing_signal_cols].set_index(key_col)
+            dropped_with_kept = dropped[[key_col] + existing_signal_cols].merge(
+                kept_by_key,
+                left_on=key_col,
+                right_index=True,
+                suffixes=("_dropped", "_kept"),
+                how="left",
+            )
+
+            loss_mask = pd.Series(False, index=dropped_with_kept.index)
+            for col in existing_signal_cols:
+                dropped_has_value = ~self._text_is_blank(
+                    dropped_with_kept[f"{col}_dropped"])
+                kept_is_blank = self._text_is_blank(
+                    dropped_with_kept[f"{col}_kept"])
+                col_loss = dropped_has_value & kept_is_blank
+                loss_cells += int(col_loss.sum())
+                loss_mask = loss_mask | col_loss
+
+            keys_with_loss = int(
+                dropped_with_kept.loc[loss_mask, key_col].nunique())
+
+        diagnostics = {
+            "duplicate_groups": duplicate_groups,
+            "duplicate_rows": duplicate_rows,
+            "exact_duplicate_groups": exact_groups,
+            "conflicting_duplicate_groups": conflicting_groups,
+            "keys_with_potential_value_loss": keys_with_loss,
+            "potential_value_loss_cells": loss_cells,
+        }
+
+        if duplicate_groups > 0:
+            risk_level = "HIGH" if keys_with_loss > 0 else (
+                "MEDIUM" if conflicting_groups > 0 else "LOW"
+            )
+            logger.info(
+                "%s dedup check -> duplicate_keys=%d, duplicate_rows=%d, exact_duplicates=%d, conflicting_duplicates=%d, keys_with_possible_data_loss=%d, possible_data_loss_fields=%d, risk=%s",
+                table_label,
+                duplicate_groups,
+                duplicate_rows,
+                exact_groups,
+                conflicting_groups,
+                keys_with_loss,
+                loss_cells,
+                risk_level,
+            )
+
+        if keys_with_loss > 0:
+            logger.warning(
+                "%s dedup detected potential information loss for %d keys (keep='last').",
+                table_label,
+                keys_with_loss,
+            )
+
+        return diagnostics
+
+    @staticmethod
     def _missing_text_mask(series: pd.Series) -> pd.Series:
         """Return True for values that are null/blank after trimming."""
         return series.fillna("").astype(str).str.strip().eq("")
@@ -200,14 +377,30 @@ class MovieDataStaging:
                 frame, target_col, source_col)
         return total_filled
 
-    def stage_movies_main(self, kaggle: pd.DataFrame, raw_movies_main: pd.DataFrame) -> tuple[int, dict[str, int]]:
+    def stage_movies_main(self, kaggle: pd.DataFrame, raw_movies_main: pd.DataFrame) -> tuple[int, int, dict[str, int]]:
         frame = raw_movies_main.copy()  # make a copy for raw schema
         if frame.empty:
-            return 0, {"rows_touched": 0, "values_filled": 0}
+            return 0, 0, {
+                "rows_touched": 0,
+                "values_filled": 0,
+                "duplicate_groups": 0,
+                "conflicting_duplicate_groups": 0,
+                "keys_with_potential_value_loss": 0,
+            }
 
         frame["id"] = frame["id"].astype(str)
-        frame = frame.drop_duplicates(
-            subset=["id"], keep="last")  # ensure no duplicates
+        dedup_stats = self._dedup_diagnostics(
+            frame,
+            key_col="id",
+            signal_cols=["title", "release_date", "budget", "revenue"],
+            table_label="movies_main",
+        )
+        frame, dedup_recovery = self._collapse_duplicate_groups(
+            frame,
+            key_col="id",
+            signal_cols=["title", "release_date", "budget", "revenue"],
+        )
+        rows_rejected_dedup = dedup_recovery["rows_rejected_dedup"]
 
         kcols = ["id", "title", "release_date_norm", "budget", "revenue"]
         merged = frame.merge(kaggle[kcols], on="id",
@@ -238,17 +431,52 @@ class MovieDataStaging:
 
         rows_touched = int(
             (output[["title", "release_date", "budget", "revenue"]].notna().any(axis=1)).sum())
-        return rows_out, {"rows_touched": rows_touched, "values_filled": values_filled}
+        return rows_out, rows_rejected_dedup, {
+            "rows_touched": rows_touched,
+            "values_filled": values_filled,
+            "duplicate_groups": dedup_stats["duplicate_groups"],
+            "conflicting_duplicate_groups": dedup_stats["conflicting_duplicate_groups"],
+            "keys_with_potential_value_loss": dedup_stats["keys_with_potential_value_loss"],
+            "keys_recovered_from_duplicates": dedup_recovery["keys_recovered_from_duplicates"],
+            "cells_recovered_from_duplicates": dedup_recovery["cells_recovered_from_duplicates"],
+        }
 
     def stage_movie_extended(
         self, kaggle: pd.DataFrame, raw_movie_extended: pd.DataFrame
-    ) -> tuple[int, dict[str, int]]:
+    ) -> tuple[int, int, dict[str, int]]:
         frame = raw_movie_extended.copy()
         if frame.empty:
-            return 0, {"rows_touched": 0, "values_filled": 0}
+            return 0, 0, {
+                "rows_touched": 0,
+                "values_filled": 0,
+                "duplicate_groups": 0,
+                "conflicting_duplicate_groups": 0,
+                "keys_with_potential_value_loss": 0,
+            }
 
         frame["id"] = frame["id"].astype(str)
-        frame = frame.drop_duplicates(subset=["id"], keep="last")
+        dedup_stats = self._dedup_diagnostics(
+            frame,
+            key_col="id",
+            signal_cols=[
+                "genres",
+                "production_countries",
+                "production_companies",
+                "spoken_languages",
+            ],
+            table_label="movie_extended",
+        )
+        frame, dedup_recovery = self._collapse_duplicate_groups(
+            frame,
+            key_col="id",
+            signal_cols=[
+                "genres",
+                "production_countries",
+                "production_companies",
+                "spoken_languages",
+            ],
+        )
+        rows_rejected_dedup = dedup_recovery["rows_rejected_dedup"]
 
         kcols = [
             "id",
@@ -291,14 +519,22 @@ class MovieDataStaging:
                 .any(axis=1)
             ).sum()
         )
-        return rows_out, {"rows_touched": rows_touched, "values_filled": values_filled}
+        return rows_out, rows_rejected_dedup, {
+            "rows_touched": rows_touched,
+            "values_filled": values_filled,
+            "duplicate_groups": dedup_stats["duplicate_groups"],
+            "conflicting_duplicate_groups": dedup_stats["conflicting_duplicate_groups"],
+            "keys_with_potential_value_loss": dedup_stats["keys_with_potential_value_loss"],
+            "keys_recovered_from_duplicates": dedup_recovery["keys_recovered_from_duplicates"],
+            "cells_recovered_from_duplicates": dedup_recovery["cells_recovered_from_duplicates"],
+        }
 
     def stage_ratings(
         self,
         kaggle: pd.DataFrame,
         raw_ratings: pd.DataFrame,
         raw_movies_main: pd.DataFrame,
-    ) -> tuple[int, dict[str, int]]:
+    ) -> tuple[int, int, dict[str, int]]:
         movie_ids = raw_movies_main[["id"]].drop_duplicates().rename(columns={
             "id": "movie_id"})  # rename to match ratings table
         movie_ids["movie_id"] = movie_ids["movie_id"].astype(str)
@@ -308,24 +544,38 @@ class MovieDataStaging:
             raw = pd.DataFrame(
                 columns=["movie_id", "avg_rating", "total_ratings", "stg_dev", "loaded_at"])
         raw["movie_id"] = raw["movie_id"].astype(str)
-        raw = raw.drop_duplicates(subset=["movie_id"], keep="last")
+        dedup_stats = self._dedup_diagnostics(
+            raw,
+            key_col="movie_id",
+            signal_cols=["avg_rating", "total_ratings", "stg_dev"],
+            table_label="ratings",
+        )
+        raw, dedup_recovery = self._collapse_duplicate_groups(
+            raw,
+            key_col="movie_id",
+            signal_cols=["avg_rating", "total_ratings", "stg_dev"],
+        )
+        rows_rejected_raw_dedup = dedup_recovery["rows_rejected_dedup"]
 
         k = kaggle[["id", "vote_average", "vote_count", "status"]].copy()
         k = k.rename(columns={  # match kaggle column names with db column names
                      "id": "movie_id", "vote_average": "kg_avg_rating", "vote_count": "kg_total_ratings"})
         k["movie_id"] = k["movie_id"].astype(str)
 
-        # Quality filter for ratings used as enrichment source.
-        k["kg_total_ratings_num"] = pd.to_numeric(
-            k["kg_total_ratings"], errors="coerce")
-        k = k[
-            # only use ratings for movies that are actually out
-            (k["status"].fillna("").str.lower() == "released")
-            & (k["kg_total_ratings_num"] >= self.enricher.min_vote_count)
-        ]
+        # Keep quality/rejection counting scoped to movies in the pipeline, not the full Kaggle dataset.
+        k_for_movies = movie_ids.merge(k, on="movie_id", how="left")
+        k_for_movies["kg_total_ratings_num"] = pd.to_numeric(
+            k_for_movies["kg_total_ratings"], errors="coerce")
+
+        matched_kaggle_rows = int(k_for_movies["status"].notna().sum())
+        k_valid = k_for_movies[
+            (k_for_movies["status"].fillna("").str.lower() == "released")
+            & (k_for_movies["kg_total_ratings_num"] >= self.enricher.min_vote_count)
+        ][["movie_id", "kg_avg_rating", "kg_total_ratings"]]
+        rows_rejected_quality = matched_kaggle_rows - len(k_valid)
 
         merged = movie_ids.merge(raw, on="movie_id", how="left").merge(
-            k, on="movie_id", how="left")
+            k_valid, on="movie_id", how="left")
 
         values_filled = self._fill_missing_from_mappings(
             merged,
@@ -343,13 +593,36 @@ class MovieDataStaging:
 
         output = merged[["movie_id", "avg_rating",
                          "total_ratings", "stg_dev", "loaded_at"]]
+        rows_before_final_filter = len(output)
         output = output[
             output["avg_rating"].fillna("").astype(str).str.strip().ne("")
             | output["total_ratings"].fillna("").astype(str).str.strip().ne("")
         ]
+        rows_rejected_final = rows_before_final_filter - len(output)
 
         rows_out = self._write_table("ratings", output)
-        return rows_out, {"rows_touched": rows_out, "values_filled": values_filled}
+        # Count only rows actually removed from final task output as rejected rows.
+        # Quality-filtered Kaggle rows are enrichment exclusions, not dropped pipeline rows.
+        total_rows_rejected = rows_rejected_raw_dedup + rows_rejected_final
+
+        if total_rows_rejected > 0:
+            logger.info(
+                "Ratings filtering: rejected %d from raw dedup, %d from quality filter, %d from final filter (total: %d)",
+                rows_rejected_raw_dedup,
+                rows_rejected_quality,
+                rows_rejected_final,
+                total_rows_rejected,
+            )
+
+        return rows_out, total_rows_rejected, {
+            "rows_touched": rows_out,
+            "values_filled": values_filled,
+            "duplicate_groups": dedup_stats["duplicate_groups"],
+            "conflicting_duplicate_groups": dedup_stats["conflicting_duplicate_groups"],
+            "keys_with_potential_value_loss": dedup_stats["keys_with_potential_value_loss"],
+            "keys_recovered_from_duplicates": dedup_recovery["keys_recovered_from_duplicates"],
+            "cells_recovered_from_duplicates": dedup_recovery["cells_recovered_from_duplicates"],
+        }
 
     def stage_all(self) -> dict[str, int]:
         logger.info("Starting staging enrichment from Kaggle dataset")
@@ -370,30 +643,31 @@ class MovieDataStaging:
         results: dict[str, int] = {}
         stats_summary: dict[str, dict[str, int]] = {}
         tasks = [
-            ("movies_main", "staging.movies_main"),
-            ("movie_extended", "staging.movie_extended"),
-            ("ratings", "staging.ratings"),
+            ("movies_main", "raw.movies_main", "staging.movies_main"),
+            ("movie_extended", "raw.movie_extended", "staging.movie_extended"),
+            ("ratings", "raw.ratings", "staging.ratings"),
         ]
 
         try:
-            for table_name, target_relation in tasks:
+            for table_name, source_relation, target_relation in tasks:
                 task_id = start_task_log(
                     self.db,
                     logger,
                     self.run_id,
                     stage_name="staging",
                     task_name=f"build_{table_name}",
+                    source_relation=source_relation,
                     target_relation=target_relation,
                 )
                 try:
                     if table_name == "movies_main":
-                        rows_out, stats = self.stage_movies_main(
+                        rows_out, rows_rejected, stats = self.stage_movies_main(
                             kaggle, raw_movies_main)
                     elif table_name == "movie_extended":
-                        rows_out, stats = self.stage_movie_extended(
+                        rows_out, rows_rejected, stats = self.stage_movie_extended(
                             kaggle, raw_movie_extended)
                     else:
-                        rows_out, stats = self.stage_ratings(
+                        rows_out, rows_rejected, stats = self.stage_ratings(
                             kaggle, raw_ratings, raw_movies_main)
 
                     results[table_name] = rows_out
@@ -403,8 +677,18 @@ class MovieDataStaging:
                         logger,
                         task_id,
                         status="completed",
-                        rows_in=stats.get("rows_touched"),
+                        # total rows before rejection
+                        rows_in=stats.get("rows_touched", 0) + rows_rejected,
                         rows_out=rows_out,
+                        rows_rejected=rows_rejected,
+                        error_message=(
+                            "dedup_summary: "
+                            f"duplicate_groups={stats.get('duplicate_groups', 0)}, "
+                            f"conflicting_groups={stats.get('conflicting_duplicate_groups', 0)}, "
+                            f"potential_loss_keys={stats.get('keys_with_potential_value_loss', 0)}, "
+                            f"recovered_keys={stats.get('keys_recovered_from_duplicates', 0)}, "
+                            f"recovered_cells={stats.get('cells_recovered_from_duplicates', 0)}"
+                        ),
                     )
                 except Exception as exc:
                     complete_task_log(
@@ -433,11 +717,38 @@ class MovieDataStaging:
                     stats = stats_summary.get(table_name, {})
                     rows_touched = stats.get("rows_touched", 0)
                     values_filled = stats.get("values_filled", 0)
+                    duplicate_groups = stats.get("duplicate_groups", 0)
+                    conflicting_groups = stats.get(
+                        "conflicting_duplicate_groups", 0)
+                    potential_loss_keys = stats.get(
+                        "keys_with_potential_value_loss", 0)
+
+                    if potential_loss_keys > 0:
+                        dedup_status = "REVIEW NEEDED"
+                    elif conflicting_groups > 0:
+                        dedup_status = "CHECK CONFLICTS"
+                    elif duplicate_groups > 0:
+                        dedup_status = "SAFE DEDUP"
+                    else:
+                        dedup_status = "NO DUPLICATES"
+
                     logger.info(f"  {table_name}:")
                     logger.info(
-                        f"    - Rows touched (enriched): {rows_touched}")
+                        f"    - Enriched rows: {rows_touched}")
                     logger.info(
-                        f"    - Values filled (from Kaggle): {values_filled}")
+                        f"    - Missing values filled from Kaggle: {values_filled}")
+                    logger.info(
+                        f"    - Duplicate movie IDs found: {duplicate_groups}")
+                    logger.info(
+                        f"    - Duplicate IDs with conflicting values: {conflicting_groups}")
+                    logger.info(
+                        f"    - Duplicate IDs where dropped row may have useful data: {potential_loss_keys}")
+                    logger.info(
+                        f"    - Duplicate IDs recovered using non-blank fallback: {stats.get('keys_recovered_from_duplicates', 0)}")
+                    logger.info(
+                        f"    - Recovered cells from duplicates: {stats.get('cells_recovered_from_duplicates', 0)}")
+                    logger.info(
+                        f"    - Dedup status: {dedup_status}")
                     logger.info(f"    - Rows written to staging: {rows_out}")
             logger.info("=" * 70)
             logger.info("Staging completed successfully")
