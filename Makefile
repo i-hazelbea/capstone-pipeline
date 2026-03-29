@@ -26,7 +26,7 @@ POSTGRES_INIT_DIR := /docker-entrypoint-initdb.d
 	bootstrap reset-db reinit-grants \
 	db-shell-admin db-shell-etl db-shell-dbt db-shell-airflow \
 	verify-roles verify-raw-grants verify-schemas \
-	ingest stage ingest-check \
+	ingest stage ingest-check audit \
 	dbt-deps dbt-run dbt-test dbt-debug \
 	pipeline-run \
 	airflow-dags airflow-trigger \
@@ -66,6 +66,7 @@ help:
 	@echo "  make dbt-run           Run dbt models"
 	@echo "  make dbt-test          Run dbt tests"
 	@echo "  make dbt-debug         Validate dbt connection"
+	@echo "  make audit             Run pipeline data-handling audit query"
 	@echo "  make pipeline-run      Run ingest + stage + dbt run + dbt test"
 	@echo ""
 	@echo "Airflow"
@@ -170,6 +171,14 @@ stage:
 
 ingest-check:
 	docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT 'movies_main' AS table_name, COUNT(*) AS row_count FROM raw.movies_main UNION ALL SELECT 'movie_extended', COUNT(*) FROM raw.movie_extended UNION ALL SELECT 'ratings', COUNT(*) FROM raw.ratings;"
+
+audit:
+	@if [ ! -f dbt/analyses/data_handling_audit.sql ]; then \
+	echo "dbt/analyses/data_handling_audit.sql not found"; \
+	echo "Create the audit query first, then run: make audit"; \
+	exit 1; \
+	fi
+	docker exec -i $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < dbt/analyses/data_handling_audit.sql
 
 dbt-deps:
 	docker exec -it $(DBT_CONTAINER) dbt deps
