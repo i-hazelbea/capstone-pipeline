@@ -1,0 +1,70 @@
+version: 2
+
+models:
+    - name: vw_high_value_studio_performance
+      description: Power BI-ready leaderboard of studios ranked by consistency of revenue growth and rating trend improvements.
+      columns:
+          - name: production_company_key
+            description: Production company surrogate key.
+            tests:
+                - not_null
+          - name: production_company
+            description: Production company name.
+            tests:
+                - not_null
+          - name: consistency_ratio
+            description: Share of observed years where both revenue growth and ratings improved.
+          - name: avg_revenue_yoy_pct
+            description: Average YoY revenue percent change.
+          - name: avg_rating_yoy_delta
+            description: Average YoY rating delta.
+          - name: latest_year_start_date_key
+            description: Date key (YYYY0101) for the latest observed year, aligned to dim_date.date_key.
+          - name: dominant_performance_band
+            description: Dominant technical performance band for the studio, selected by highest frequency and latest-year tie break.
+          - name: dominant_performance_band_label
+            description: Presentation-friendly label for the dominant performance band.
+          - name: latest_performance_band
+            description: Presentation-friendly label for the latest observed performance band in the 2000-2024 analysis window (no underscore format).
+          - name: performance_dot
+            description: Dot symbol used for visual marker rendering in Power BI tables/cards.
+          - name: performance_dot_color_hex
+            description: Hex color mapped to the dominant performance band for conditional formatting in Power BI.
+          - name: weighted_decision_score
+            description: Weighted action score using latest band (45%), dominant band (25%), years observed score (10%, capped at 15 years), and activity recency score (20%) measured against the latest year available in the analysis window.
+          - name: years_since_latest_release
+            description: Gap between the studio latest release year and the latest year available in the analysis window.
+          - name: is_inactive_studio
+            description: True when the studio has not released a film since 2013; inactive status overrides performance band outputs.
+          - name: is_recently_active
+            description: True when the studio has activity within 2 years of the latest year available in the analysis window.
+          - name: studio_action_recommendation
+            description: "Strategy bucket with inactivity override: studios inactive since 2013 are forced to Inactive; otherwise Incentivise when consistency_ratio > 0.15 and weighted_decision_score >= 0.55, Review when consistency_ratio > 0.15 and weighted_decision_score >= 0.30, else Renegotiate."
+
+    - name: vw_company_year_trends
+      description: Power BI-ready yearly trend view for each studio with revenue and rating movement bands.
+      columns:
+          - name: production_company_key
+            description: Production company surrogate key.
+            tests:
+                - not_null
+          - name: production_company
+            description: Production company name.
+            tests:
+                - not_null
+          - name: release_year
+            description: Year grain.
+            tests:
+                - not_null
+          - name: release_year_start_date_key
+            description: Date key (YYYY0101) aligned to dim_date.date_key for year-level joins and formatting.
+            tests:
+                - not_null
+          - name: prior_observed_year
+            description: Previous observed release year for the same production company; null indicates baseline year.
+          - name: revenue_yoy_pct
+            description: YoY revenue percent change.
+          - name: rating_yoy_delta
+            description: YoY rating delta.
+          - name: performance_band
+            description: Classification label for yearly revenue and rating movement; uses `no_baseline` when no prior observed year exists for the company.
