@@ -1,0 +1,89 @@
+version: 2
+
+models:
+  - name: int_movie_company_bridge
+    description: |
+      Bridge model that explodes movie to production company grain and attaches rating metrics.
+      
+      **Data Quality Features:**
+      - Standardizes company names (consolidates LionsGate variants).
+      - Removes orphaned articles ("The", "A", "An") from malformed source data.
+      - Auto-corrects obvious budget/revenue scaling errors with audit trail.
+    config:
+      materialized: table
+      indexes:
+        - columns: [movie_id]
+        - columns: [production_company]
+        - columns: [release_year]
+        - columns: [production_company, release_year]
+    columns:
+      - name: movie_id
+        description: Movie identifier.
+        tests:
+          - not_null
+      - name: title
+        description: Movie title.
+      - name: release_date
+        description: Movie release date in YYYY-MM-DD format.
+      - name: release_year
+        description: Release year extracted from release_date.
+      - name: production_company
+        description: One production company per row. Standardized to canonical name (e.g., all LionsGate variants → "Lions Gate Films").
+        tests:
+          - not_null
+      - name: budget_amount
+        description: |
+          Movie budget in USD. 
+          **CORRECTED** via auto-correction logic if source values showed obvious scaling errors.
+          Use `budget_correction_flag` to identify and audit corrected rows.
+      - name: revenue_amount
+        description: |
+          Movie revenue in USD.
+          Corrected only for the `both_scaled_×1m` case where both budget and revenue
+          were tiny and likely missing a millions multiplier.
+      - name: avg_rating
+        description: Average IMDb/Kaggle rating (0–10 scale, normalized in staging).
+      - name: total_ratings
+        description: Vote count for the movie rating.
+      - name: genres
+        description: Comma-separated genres from source extended data.
+      - name: production_countries
+        description: JSON array of production country codes.
+      - name: budget_correction_flag
+        description: |
+          Audit flag indicating if financial values were auto-corrected.
+          - `'original'`: No correction applied.
+          - `'both_scaled_×1m'`: Both budget and revenue were <1000; scaled both ×1M (major data error).
+          - `'budget_scaled_×1m'`: Budget <1000 but revenue >1M; scaled budget ×1M.
+          - `'budget_scaled_×1k'`: Budget moderate, revenue massive (>100M); scaled budget ×1K.
+        tests:
+          - accepted_values:
+              values: ['original', 'both_scaled_×1m', 'budget_scaled_×1m', 'budget_scaled_×1k']
+      - name: record_loaded_at
+        description: Timestamp when this record was loaded into the warehouse.
+
+
+  - name: int_company_year_metrics
+    description: Company-year aggregate metrics used for YoY revenue and rating trend analysis.
+    config:
+      materialized: table
+      indexes:
+        - columns: [production_company, release_year]
+        - columns: [release_year]
+    columns:
+      - name: production_company
+        description: Production company at aggregate grain.
+        tests:
+          - not_null
+      - name: release_year
+        description: Aggregate release year.
+        tests:
+          - not_null
+      - name: total_revenue
+        description: Sum of positive movie revenue for the company-year.
+      - name: weighted_avg_rating
+        description: Vote-weighted average rating for the company-year.
+      - name: revenue_yoy_pct
+        description: Year-over-year percent change in company revenue.
+      - name: rating_yoy_delta
+        description: Year-over-year delta in weighted average rating.
