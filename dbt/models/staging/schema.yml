@@ -3,10 +3,16 @@ version: 2
 models:
     - name: stg_movies_main
       description: Cleaned and deduplicated movie master data from staging.movies_main source.
+      config:
+          materialized: table
+          indexes:
+              - columns: [movie_id]
+                unique: true
+              - columns: [release_date]
       columns:
           - name: movie_id
             description: Unique movie identifier.
-            data_type: text
+            data_type: bigint
             tests:
                 - not_null
                 - unique
@@ -28,10 +34,15 @@ models:
 
     - name: stg_movie_extended
       description: Cleaned and deduplicated movie extended attributes from staging.movie_extended source.
+      config:
+          materialized: table
+          indexes:
+              - columns: [movie_id]
+                unique: true
       columns:
           - name: movie_id
             description: Unique movie identifier.
-            data_type: text
+            data_type: bigint
             tests:
                 - not_null
                 - unique
@@ -53,10 +64,16 @@ models:
 
     - name: stg_ratings
       description: Cleaned and deduplicated ratings from staging.ratings source.
+      config:
+          materialized: table
+          indexes:
+              - columns: [movie_id]
+                unique: true
+              - columns: [total_ratings]
       columns:
           - name: movie_id
             description: Unique movie identifier.
-            data_type: text
+            data_type: bigint
             tests:
                 - not_null
                 - unique
@@ -69,6 +86,12 @@ models:
           - name: std_dev
             description: Numeric rating standard deviation when available.
             data_type: numeric(10,4)
+          - name: avg_rating_minmax
+            description: Min-max normalized rating on 0..1 scale for cross-movie comparability.
+            data_type: numeric(12,6)
+          - name: avg_rating_zscore
+            description: Z-score normalized rating based on the staged rating distribution.
+            data_type: numeric(12,6)
           - name: loaded_at
             description: Parsed timestamp of the latest staged ratings record.
             data_type: timestamp
