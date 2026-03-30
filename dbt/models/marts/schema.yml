@@ -1,0 +1,133 @@
+version: 2
+
+models:
+    - name: dim_date
+      description: Reusable calendar date dimension generated independently of source tables.
+      config:
+          materialized: table
+          indexes:
+              - columns: [date_day]
+                unique: true
+              - columns: [year_number]
+      columns:
+          - name: date_key
+            description: Surrogate key in YYYYMMDD integer format.
+            tests:
+                - not_null
+                - unique
+          - name: date_day
+            description: Calendar date at daily grain.
+            tests:
+                - not_null
+                - unique
+          - name: year_number
+            description: Calendar year number.
+          - name: month_number
+            description: Calendar month number.
+          - name: day_of_month
+            description: Day number within the month.
+
+    - name: dim_movies
+      description: Movie dimension table combining core and extended movie attributes.
+      config:
+          materialized: table
+          indexes:
+              - columns: [movie_id]
+                unique: true
+              - columns: [release_date_key]
+      columns:
+          - name: movie_id
+            description: Movie identifier.
+            tests:
+                - not_null
+                - unique
+          - name: release_date_key
+            description: Foreign key to dim_date for movie release date.
+            tests:
+                - relationships:
+                      to: ref('dim_date')
+                      field: date_key
+          - name: release_date
+            description: Parsed movie release date.
+          - name: revenue_amount
+            description: Movie revenue amount.
+
+    - name: dim_production_companies
+      description: Production company dimension generated from exploded company mappings.
+      config:
+          materialized: table
+          indexes:
+              - columns: [production_company_key]
+                unique: true
+              - columns: [production_company]
+      columns:
+          - name: production_company_key
+            description: Surrogate key for production company.
+            tests:
+                - not_null
+                - unique
+          - name: production_company
+            description: Natural production company name.
+            tests:
+                - not_null
+
+    - name: fct_company_year_performance
+      description: Fact table at production-company and release-year grain for YoY performance analysis.
+      config:
+          materialized: table
+          indexes:
+              - columns: [production_company_key, release_year]
+              - columns: [release_year_start_date_key]
+      columns:
+          - name: production_company_key
+            description: Foreign key to production company dimension.
+            tests:
+                - not_null
+          - name: release_year_start_date_key
+            description: Foreign key to dim_date at the first day of release_year.
+            tests:
+                - not_null
+                - relationships:
+                      to: ref('dim_date')
+                      field: date_key
+          - name: release_year
+            description: Fact year grain.
+            tests:
+                - not_null
+          - name: total_revenue
+            description: Total revenue for company-year.
+          - name: weighted_avg_rating
+            description: Weighted average rating for company-year.
+          - name: revenue_yoy_pct
+            description: Year-over-year revenue percent change.
+          - name: rating_yoy_delta
+            description: Year-over-year rating delta.
+
+    - name: fct_movie_ratings
+      description: Movie-level rating fact-like table retained for detailed drill-through and QA.
+      config:
+          materialized: table
+          indexes:
+              - columns: [movie_id]
+              - columns: [release_date_key]
+      columns:
+          - name: movie_id
+            description: Movie identifier.
+            tests:
+                - not_null
+          - name: release_date_key
+            description: Foreign key to dim_date for release date filtering.
+            tests:
+                - relationships:
+                      to: ref('dim_date')
+                      field: date_key
+          - name: budget_amount
+            description: Movie budget carried from dim_movies for ROI interpretation.
+          - name: revenue_amount
+            description: Movie revenue carried from dim_movies for ROI interpretation.
+          - name: roi_pct
+            description: Movie ROI percentage = (revenue - budget) / budget * 100.
+          - name: avg_rating_minmax
+            description: Min-max normalized rating on 0..1 scale.
+          - name: avg_rating_zscore
+            description: Z-score normalized rating for relative quality comparison.
